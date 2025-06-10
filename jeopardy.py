@@ -81,6 +81,7 @@ attempted_players = set()
 buzz_open         = False
 buzz_start_time   = 0.0
 current_val       = 0
+current_answer    = ""
 first_buzzer_sid  = None
 host_locked       = False
 
@@ -159,7 +160,7 @@ def handle_change_round(delta):
 
 @socketio.on("start_clue")
 def handle_start_clue(data):
-    global current_val, attempted_players, buzz_open, first_buzzer_sid, host_locked
+    global current_val, current_answer, attempted_players, buzz_open, first_buzzer_sid, host_locked
     if host_locked: return
     host_locked = True
     socketio.emit("lock_board", room=HOSTS_ROOM)
@@ -175,6 +176,7 @@ def handle_start_clue(data):
     socketio.emit("mark_used", {"cat": cat, "row": row}, room=HOSTS_ROOM)
 
     clue = CLUE_BANK_BY_ROUND[rkey][(cat, row)]
+    current_answer = clue["answer"]
     socketio.emit("new_clue")
     socketio.emit("show_clue", {"text": clue["text"], "image": clue["image"]})
     socketio.emit("reading_timer", {"duration": READING_TIME})
@@ -230,6 +232,11 @@ def handle_judge(data):
 @socketio.on("skip_clue")
 def skip_clue():
     end_clue()
+
+@socketio.on("reveal_answer")
+def handle_reveal_answer():
+    if host_locked and current_answer:
+        socketio.emit("show_answer", {"text": current_answer})
 
 @socketio.on("adjust_score")
 def handle_adjust(data):
@@ -309,11 +316,12 @@ def _send_review():
     }, room=HOSTS_ROOM)
 
 def end_clue():
-    global first_buzzer_sid, attempted_players, buzz_open, host_locked
+    global first_buzzer_sid, attempted_players, buzz_open, host_locked, current_answer
     first_buzzer_sid = None
     attempted_players.clear()
     buzz_open = False
     host_locked = False
+    current_answer = ""
     socketio.emit("unlock_board", room=HOSTS_ROOM)
     broadcast_scores()
 

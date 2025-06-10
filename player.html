@@ -87,6 +87,10 @@
       document.getElementById('clueArea').innerHTML = '';
     });
     socket.on('show_clue', d=> renderClue(d));
+    socket.on('show_answer', d=>{
+      const area=document.getElementById('clueArea');
+      area.innerHTML += `<p><em>Correct response: ${d.text}</em></p>`;
+    });
     socket.on('reading_timer', ({duration})=> startTimer(duration));
     socket.on('open_buzz', ()=>{
       if(!hasAttempted) document.getElementById('buzz').disabled = false;
