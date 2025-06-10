@@ -48,6 +48,7 @@
 </div>
 <div id="skipControls" style="display:none">
   <button class="skip" onclick="skipClue()">Skip Clue</button>
+  <button id="showAnswerBtn" onclick="showAnswer()">Show Correct Response</button>
 </div>
 
 <h2>Scores (click to adjust)</h2>
@@ -154,6 +155,7 @@
   }
   function award(correct){ socket.emit('judge',{correct}); document.getElementById('buzzerControls').style.display='none'; }
   function skipClue(){ socket.emit('skip_clue'); document.getElementById('skipControls').style.display='none'; }
+  function showAnswer(){ socket.emit('reveal_answer'); }
 
   socket.on('lock_board',()=>{
     boardLocked=true;
@@ -187,6 +189,10 @@
     let h = d.image?`<img src="${d.image}"><br>`:'';
     h+=`<h2>${d.text}</h2>`;
     document.getElementById('clueArea').innerHTML=h;
+  });
+  socket.on('show_answer', d=>{
+    const area=document.getElementById('clueArea');
+    area.innerHTML += `<p><em>Correct response: ${d.text}</em></p>`;
   });
 
   function startTimer(d){
