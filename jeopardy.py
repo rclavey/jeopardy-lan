@@ -38,7 +38,11 @@ def load_rounds(path):
             val = int(row["value"] or 0)
             clue = row["clue"].strip()
             ans  = row["answer"].strip()
-            img  = row.get("image","").strip()
+            img  = row.get("image", "").strip()
+            # Normalize image path so clients can fetch from our /static folder
+            if img:
+                img = os.path.basename(img)
+                img = f"/static/{img}"
             rounds.setdefault(rnd, OrderedDict())
             rounds[rnd].setdefault(cat, {})[val] = {
                 "text": clue, "answer": ans, "image": img, "value": val
