@@ -1,0 +1,189 @@
+<!doctype html>
+<html>
+<head>
+  <title>Jeopardy</title>
+  <style>
+    body{font-family:sans-serif;text-align:center;
+         background:#001f3f;color:#fff;margin:0}
+    #join{margin-top:20vh}
+    .score{margin-top:1em;font-size:1.2rem}
+    button{font-size:2rem;padding:1em 2em;border-radius:.5em;
+           border:none;background:#FF851B;color:#111}
+    button:disabled{background:#555;color:#aaa}
+    #readingTimer{height:10px;background:#fff;width:90%;
+                  margin:1em auto;display:none;border-radius:5px}
+    #timerBar{height:100%;background:#0074D9;width:0%;
+              border-radius:5px}
+    #clueArea img{max-width:80%;max-height:250px}
+
+    /* Final-jeopardy wager style */
+    #wagerScreen{display:none;padding:2em;background:#001f3f}
+    #wagerScreen input{font-size:1.5rem;width:5em;text-align:center}
+    #wagerStatus{margin-top:1em;font-size:1.2rem}
+
+    /* Final-jeopardy answer style */
+    #answerScreen{display:none;padding:2em;background:#001f3f}
+    #answerScreen input{font-size:1.5rem;width:80%;padding:.5em}
+    #answerPrompt{margin-bottom:1em;font-size:1.2rem}
+  </style>
+</head>
+<body>
+
+  <div id="join">
+    <h1>Enter Your Name</h1>
+    <input id="name" placeholder="Contestant name">
+    <button onclick="join()">Join</button>
+  </div>
+
+  <!-- normal game -->
+  <div id="game" style="display:none">
+    <h2 id="username"></h2>
+    <div id="readingTimer"><div id="timerBar"></div></div>
+    <div id="clueArea"></div>
+    <button id="buzz" onclick="buzz()" disabled>BUZZ!</button>
+    <div class="score">Score: <span id="score">0</span></div>
+    <p id="status"></p>
+  </div>
+
+  <!-- Final-jeopardy wagering -->
+  <div id="wagerScreen">
+    <h2>FINAL JEOPARDY: Place Your Wager</h2>
+    <p>Your current score: <strong id="currentScore">0</strong></p>
+    <input id="wagerInput" type="number" min="0" />
+    <button id="submitWagerBtn" onclick="submitWager()">Submit Wager</button>
+    <p id="wagerStatus"></p>
+  </div>
+
+  <!-- Final-jeopardy answer entry -->
+  <div id="answerScreen">
+    <h2>FINAL JEOPARDY: Write Your Answer</h2>
+    <div id="answerPrompt">You have 2 minutes to type your response below.</div>
+    <input id="answerInput" type="text" placeholder="Type your response here">
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <script>
+    const socket = io();
+    let myScore = 0, hasAttempted = false;
+
+    function join(){
+      const n = document.getElementById('name').value.trim();
+      if(!n) return;
+      socket.emit('player_join', n);
+    }
+
+    socket.on('joined', ({name,score})=>{
+      document.getElementById('join').style.display='none';
+      document.getElementById('game').style.display='block';
+      document.getElementById('username').textContent = name;
+      myScore = score;
+      updateScore();
+    });
+
+    // ─ normal clue flow ────────────────────────────────────────
+    socket.on('new_clue', ()=>{
+      hasAttempted = false;
+      document.getElementById('buzz').disabled = true;
+      document.getElementById('clueArea').innerHTML = '';
+    });
+    socket.on('show_clue', d=> renderClue(d));
+    socket.on('reading_timer', ({duration})=> startTimer(duration));
+    socket.on('open_buzz', ()=>{
+      if(!hasAttempted) document.getElementById('buzz').disabled = false;
+      document.getElementById('status').textContent = 'Buzzers OPEN!';
+    });
+    socket.on('close_buzz', ()=> document.getElementById('buzz').disabled = true);
+    socket.on('player_buzzed', ({name,time})=> console.log(`${name} buzzed at ${time}`));
+    socket.on('info', msg=> document.getElementById('status').textContent = msg);
+
+    function buzz(){
+      socket.emit('buzz');
+      hasAttempted = true;
+      document.getElementById('buzz').disabled = true;
+    }
+    function updateScore(){
+      document.getElementById('score').textContent = myScore;
+    }
+    function renderClue(d){
+      let h = '';
+      if(d.image) h += `<img src="${d.image}"><br>`;
+      h += `<h3>${d.text}</h3>`;
+      document.getElementById('clueArea').innerHTML = h;
+    }
+
+    function startTimer(duration, onEnd){
+      const cont = document.getElementById('readingTimer'),
+            bar  = document.getElementById('timerBar'),
+            start= Date.now();
+      cont.style.display='block'; bar.style.width='0%';
+      const iv = setInterval(()=>{
+        const pct = Math.min(100, ((Date.now()-start)/(duration*1000))*100);
+        bar.style.width = pct + '%';
+        if(pct >= 100){
+          clearInterval(iv);
+          if(onEnd) onEnd();
+        }
+      }, 40);
+    }
+
+    // ─ score updates ────────────────────────────────────────────
+    socket.on('scores', list => {
+      const me = list.find(p => p.sid === socket.id);
+      if(me){
+        myScore = me.score;
+        updateScore();
+      }
+    });
+
+    // ─ Final Jeopardy wagering ────────────────────────────────
+    socket.on('start_final_wager', ({duration})=>{
+      document.getElementById('game').style.display       = 'none';
+      document.getElementById('wagerScreen').style.display= 'block';
+      document.getElementById('answerScreen').style.display= 'none';
+      document.getElementById('currentScore').textContent = myScore;
+      const maxW = Math.max(myScore,100);
+      const inp  = document.getElementById('wagerInput');
+      inp.value = ''; inp.min = 0; inp.max = maxW;
+      document.getElementById('wagerStatus').textContent = `Max wager: ${maxW}`;
+      document.getElementById('submitWagerBtn').disabled = false;
+    });
+
+    function submitWager(){
+      let raw = parseInt(document.getElementById('wagerInput').value,10);
+      const maxW = Math.max(myScore,100);
+      let w = isNaN(raw)?0:raw;
+      w = Math.max(0, Math.min(w, maxW));
+      socket.emit('submit_wager',{wager:w});
+      document.getElementById('wagerStatus').textContent = `You wagered ${w}`;
+      document.getElementById('submitWagerBtn').disabled = true;
+    }
+
+    socket.on('wager_received', ({wager})=>{
+      console.log('Server got wager', wager);
+    });
+
+    // ─ Final Jeopardy clue & answer entry ─────────────────────
+    socket.on('final_clue', d=>{
+      document.getElementById('wagerScreen').style.display  = 'none';
+      document.getElementById('answerScreen').style.display = 'block';
+      document.getElementById('clueArea').innerHTML =
+        (d.image?`<img src="${d.image}"><br>`:'') +
+        `<h2>Final Jeopardy</h2><h3>${d.text}</h3>`;
+      const ai = document.getElementById('answerInput');
+      ai.value = ''; ai.disabled = false;
+    });
+
+    socket.on('final_timer', ({duration})=>{
+      startTimer(duration, ()=>{
+        const ans = document.getElementById('answerInput').value.trim();
+        socket.emit('submit_answer',{answer: ans});
+        document.getElementById('answerInput').disabled = true;
+      });
+    });
+
+    socket.on('answer_received', ()=> {
+      console.log('Server acknowledged answer');
+    });
+  </script>
+</body>
+</html>
