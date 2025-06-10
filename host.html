@@ -1,0 +1,255 @@
+<!doctype html>
+<html>
+<head>
+  <title>Jeopardy Host</title>
+  <style>
+    body{font-family:sans-serif;background:#111;color:#eee;margin:0;padding:0;text-align:center}
+    table{width:100%;border-collapse:collapse;margin-top:1em}
+    th,td{border:1px solid #444;padding:1em;text-align:center}
+    td.used{background:#222;color:#666;pointer-events:none}
+    button{font-size:1rem;padding:.5em 1em;margin:.5em;border:none;border-radius:.3em}
+    .correct{background:#2ecc40}.incorrect{background:#ff4136}.skip{background:#888;color:#fff;}
+    #readingTimer{height:10px;background:#fff;width:90%;margin:1em auto;display:none;border-radius:5px}
+    #timerBar{height:100%;background:#0074D9;width:0%;border-radius:5px}
+    #clueArea img{max-width:80%;max-height:300px}
+    #finalInstructions{display:none;padding:1em;background:#222;color:#fff;margin:1em;}
+    #closeWagersBtn,#startReviewBtn{display:inline-block;margin-top:1em}
+    #reviewArea{display:none;padding:2em;background:#222;margin:1em;}
+    #reviewArea p{font-size:1.2rem;margin:.5em 0;}
+  </style>
+</head>
+<body>
+
+<h1>
+  HOST CONTROL PANEL
+  <button id="prevBtn" onclick="changeRound(-1)">← Prev</button>
+  (<span id="roundName">{{ round_name }}</span>)
+  <button id="nextBtn" onclick="changeRound(1)">Next →</button>
+</h1>
+
+<div id="finalInstructions">
+  <h2>Final Jeopardy Wager Instructions</h2>
+  <p>Contestants: Choose your wager up to your total score (min 100 if ≤ 0).</p>
+  <!-- Display the Final Jeopardy category -->
+  <p id="finalCategory"></p>
+  <p>You have 60 seconds to submit your wager.</p>
+  <button id="closeWagersBtn" onclick="closeWagers()">Close Wagers</button>
+</div>
+
+<!-- main board/clue -->
+<div id="board" data-board='{{ data | tojson }}'></div>
+<div id="readingTimer"><div id="timerBar"></div></div>
+<div id="clueArea" style="margin:1em 0;"></div>
+<h2 id="buzzStatus">Select a clue…</h2>
+<div id="buzzerControls" style="display:none">
+  <p><strong id="buzzPlayer"></strong> buzzed first (<span id="buzzTime"></span>s)</p>
+  <button class="correct" onclick="award(true)">Correct</button>
+  <button class="incorrect" onclick="award(false)">Incorrect</button>
+</div>
+<div id="skipControls" style="display:none">
+  <button class="skip" onclick="skipClue()">Skip Clue</button>
+</div>
+
+<h2>Scores (click to adjust)</h2>
+<ul id="scores"></ul>
+
+<!-- Final‐Jeopardy Answer Review -->
+<div id="reviewArea">
+  <h2>Review Final Jeopardy Answers</h2>
+  <p id="reviewPlayer"></p>
+  <p id="reviewAnswer"></p>
+  <p id="reviewWager"></p>
+  <button class="correct" onclick="judgeReview(true)">Mark Correct</button>
+  <button class="incorrect" onclick="judgeReview(false)">Mark Incorrect</button>
+</div>
+<button id="startReviewBtn" style="display:none" onclick="startReview()">Start Answer Review</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+  let boardLocked = false;
+  let boardData   = JSON.parse(document.getElementById('board').dataset.board);
+  const socket    = io();
+
+  socket.emit('register_host');
+
+  // NAV / ROUND CONTROLS
+  function updateNavButtons(){
+    const round  = document.getElementById('roundName').textContent;
+    const isFinal= (round === 'F');
+    document.getElementById('prevBtn').disabled = isFinal;
+    document.getElementById('nextBtn').disabled = isFinal;
+    document.getElementById('finalInstructions').style.display = isFinal ? 'block' : 'none';
+    document.getElementById('board').style.display             = isFinal ? 'none'  : 'block';
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    drawBoard();
+    markInitialUsed();
+    updateNavButtons();
+    document.getElementById('scores').addEventListener('click', e=>{
+      const li = e.target.closest('li');
+      if(!li) return;
+      const sid = li.dataset.sid;
+      const delta = prompt('Enter points to add/subtract (e.g. +200 or -200):');
+      if(!delta) return;
+      const n = parseInt(delta,10);
+      if(isNaN(n)) return alert('Invalid');
+      socket.emit('adjust_score',{sid,delta:n});
+    });
+  });
+
+  // BOARD RENDER
+  function drawBoard(){
+    let html = '<table><tr>';
+    boardData.forEach((c,i)=> html+=`<th>${c.name}</th>`);
+    html += '</tr>';
+    for(let r=0; r<5; r++){
+      html += '<tr>';
+      boardData.forEach((c,i)=>{
+        const v = c.clues[r]||'';
+        html += `<td id="c_${i}_${r}" onclick="selectClue(${i},${r})">${v}</td>`;
+      });
+      html += '</tr>';
+    }
+    html += '</table>';
+    document.getElementById('board').innerHTML = html;
+  }
+
+  function markInitialUsed(){
+    socket.emit('get_used');
+  }
+  socket.on('init_used', arr=>{
+    arr.forEach(([ci,ri])=>{
+      const td = document.getElementById(`c_${ci}_${ri}`);
+      if(td) td.classList.add('used');
+    });
+  });
+
+  // ROUND SWITCH
+  function changeRound(delta){
+    socket.emit('change_round', delta);
+  }
+  socket.on('new_board', d=>{
+    boardData = d.categories;
+    document.getElementById('roundName').textContent = d.round;
+    drawBoard();
+    d.used.forEach(([ci,ri])=>{
+      const td = document.getElementById(`c_${ci}_${ri}`);
+      if(td) td.classList.add('used');
+    });
+    socket.emit('unlock_board');
+    updateNavButtons();
+  });
+
+  // CLUE / BUZZ / JUDGE / SKIP
+  function selectClue(i,r){
+    if(boardLocked) return;
+    const cell = document.getElementById(`c_${i}_${r}`);
+    if(!cell.textContent||cell.classList.contains('used')) return;
+    boardLocked=true;
+    cell.classList.add('used');
+    socket.emit('start_clue',{cat:i,row:r,val:parseInt(cell.textContent)});
+    document.getElementById('buzzStatus').textContent=`Reading clue worth ${cell.textContent}…`;
+    document.getElementById('buzzerControls').style.display='none';
+  }
+  function award(correct){ socket.emit('judge',{correct}); document.getElementById('buzzerControls').style.display='none'; }
+  function skipClue(){ socket.emit('skip_clue'); document.getElementById('skipControls').style.display='none'; }
+
+  socket.on('lock_board',()=>{
+    boardLocked=true;
+    document.getElementById('skipControls').style.display='block';
+  });
+  socket.on('unlock_board',()=>{
+    boardLocked=false;
+    document.getElementById('skipControls').style.display='none';
+    updateNavButtons();
+  });
+
+  // TIMER & BUZZ OPEN
+  socket.on('reading_timer', ({duration})=> startTimer(duration));
+  socket.on('open_buzz', ()=> document.getElementById('buzzStatus').textContent='Buzzers OPEN');
+  socket.on('player_buzzed', ({name,time})=>{
+    document.getElementById('buzzPlayer').textContent=name;
+    document.getElementById('buzzTime').textContent=time;
+    document.getElementById('buzzerControls').style.display='block';
+    document.getElementById('buzzStatus').textContent='Awaiting host decision…';
+  });
+
+  // SCORES & INFO
+  socket.on('scores', scores=>{
+    document.getElementById('scores').innerHTML=
+      scores.map(p=>`<li data-sid="${p.sid}">${p.name}: ${p.score}</li>`).join('');
+  });
+  socket.on('info', msg=> document.getElementById('buzzStatus').textContent=msg);
+
+  socket.on('new_clue', ()=>{ document.getElementById('clueArea').innerHTML=''; });
+  socket.on('show_clue', d=>{
+    let h = d.image?`<img src="${d.image}"><br>`:'';
+    h+=`<h2>${d.text}</h2>`;
+    document.getElementById('clueArea').innerHTML=h;
+  });
+
+  function startTimer(d){
+    const cont=document.getElementById('readingTimer'),
+          bar=document.getElementById('timerBar'),
+          st=Date.now();
+    cont.style.display='block';bar.style.width='0%';
+    const iv=setInterval(()=>{
+      const pct=Math.min(100,((Date.now()-st)/(d*1000))*100);
+      bar.style.width=pct+'%';
+      if(pct>=100) clearInterval(iv);
+    },40);
+  }
+
+  // FINAL JEOPARDY: SHOW CATEGORY
+  socket.on('start_final_wager', ({duration,category})=>{
+    document.getElementById('finalCategory').textContent = `Category: ${category}`;
+    document.getElementById('finalInstructions').style.display = 'block';
+  });
+
+  // CLOSE WAGERS & SCHEDULE REVIEW BUTTON
+  function closeWagers(){
+    socket.emit('close_wagers');
+    document.getElementById('closeWagersBtn').disabled=true;
+    socket.once('final_timer', ()=>{
+      document.getElementById('startReviewBtn').style.display='inline-block';
+    });
+  }
+
+  socket.on('final_clue', d=>{
+    document.getElementById('clueArea').innerHTML=
+      (d.image?`<img src="${d.image}"><br>`:'')+
+      `<h2>Final Jeopardy</h2><h3>${d.text}</h3>`;
+    document.getElementById('board').style.display='none';
+    document.getElementById('buzzerControls').style.display='none';
+    document.getElementById('skipControls').style.display='none';
+  });
+  socket.on('final_timer', ({duration})=> startTimer(duration));
+
+  // REVIEW ANSWERS
+  function startReview(){
+    socket.emit('start_answer_review');
+    document.getElementById('startReviewBtn').disabled=true;
+  }
+  socket.on('review_answer', data=>{
+    document.getElementById('reviewArea').style.display='block';
+    const playerEl=document.getElementById('reviewPlayer');
+    playerEl.textContent=`Player: ${data.name}`;
+    playerEl.dataset.sid=data.sid;
+    document.getElementById('reviewAnswer').textContent=`Answer: ${data.answer}`;
+    document.getElementById('reviewWager').textContent=`Wager: ${data.wager}`;
+  });
+  function judgeReview(correct){
+    const sid=document.getElementById('reviewPlayer').dataset.sid;
+    socket.emit('judge_final_answer',{sid,correct});
+  }
+  socket.on('review_outcome',()=>{
+    document.getElementById('reviewArea').style.display='none';
+  });
+  socket.on('end_review',()=>{
+    alert('All answers reviewed.');
+    updateNavButtons();
+  });
+</script>
+</body>
+</html>
