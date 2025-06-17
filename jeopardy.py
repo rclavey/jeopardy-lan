@@ -347,5 +347,7 @@ def _get_local_ip():
 
 if __name__ == "__main__":
     host_ip = _get_local_ip()
-    print(f"★ Jeopardy server running at http://{host_ip}:{PORT}")
+    url = f"http://{host_ip}:{PORT}"
+    print(f"★ Jeopardy server running at {url}")
+    print("Open this exact URL on all devices. If your browser insists on a secure connection, ensure the address begins with 'http://'.")
     socketio.run(app, host="0.0.0.0", port=PORT)

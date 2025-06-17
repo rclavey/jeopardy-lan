@@ -9,3 +9,7 @@ This project runs a local Jeopardy game using Flask and Socket.IO.
    `http://<server-ip>:5050/host`.
 
 Use the displayed IP instead of `127.0.0.1` so other devices can connect.
+
+**Troubleshooting:** If your browser says it can't establish a secure connection,
+make sure the address begins with `http://` (not `https://`). Some browsers
+automatically try HTTPS which this simple local server does not support.
