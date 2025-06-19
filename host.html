@@ -213,14 +213,16 @@
     document.getElementById('finalInstructions').style.display = 'block';
   });
 
-  // CLOSE WAGERS & SCHEDULE REVIEW BUTTON
+  // CLOSE WAGERS
   function closeWagers(){
     socket.emit('close_wagers');
-    document.getElementById('closeWagersBtn').disabled=true;
-    socket.once('final_timer', ()=>{
-      document.getElementById('startReviewBtn').style.display='inline-block';
-    });
+    document.getElementById('closeWagersBtn').disabled = true;
   }
+
+  // Enable answer review button when timer ends
+  socket.on('enable_review', ()=>{
+    document.getElementById('startReviewBtn').style.display = 'inline-block';
+  });
 
   socket.on('final_clue', d=>{
     document.getElementById('clueArea').innerHTML=
