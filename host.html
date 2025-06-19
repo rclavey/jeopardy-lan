@@ -217,11 +217,22 @@
   function closeWagers(){
     socket.emit('close_wagers');
     document.getElementById('closeWagersBtn').disabled = true;
+
+    const btn=document.getElementById('startReviewBtn');
+    btn.style.display='inline-block';
+    btn.disabled=true;
+
   }
 
   // Enable answer review button when timer ends
   socket.on('enable_review', ()=>{
+
+    const btn=document.getElementById('startReviewBtn');
+    btn.style.display='inline-block';
+    btn.disabled=false;
+
     document.getElementById('startReviewBtn').style.display = 'inline-block';
+
   });
 
   socket.on('final_clue', d=>{
