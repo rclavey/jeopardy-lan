@@ -70,8 +70,9 @@
   let boardLocked = false;
   let boardData   = JSON.parse(document.getElementById('board').dataset.board);
   const socket    = io();
-
-  socket.emit('register_host');
+  socket.on('connect', ()=>{
+    socket.emit('register_host');
+  });
 
   // NAV / ROUND CONTROLS
   function updateNavButtons(){
