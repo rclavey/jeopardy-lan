@@ -9,7 +9,7 @@
 
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room
-from time import time, sleep
+from time import time
 import socket, os, csv
 from collections import OrderedDict
 
@@ -187,7 +187,7 @@ def passthrough_mark_used(data):
     emit("mark_used", data, room=HOSTS_ROOM)
 
 def after_reading_open_buzzers():
-    sleep(READING_TIME)
+    socketio.sleep(READING_TIME)
     open_buzzers()
 
 def open_buzzers():
@@ -275,7 +275,7 @@ def handle_close_wagers():
     socketio.start_background_task(_notify_review_ready)
 
 def _notify_review_ready():
-    sleep(FINAL_TIMER)
+    socketio.sleep(FINAL_TIMER)
     socketio.emit("enable_review", room=HOSTS_ROOM)
 
 @socketio.on("submit_answer")
