@@ -15,7 +15,7 @@ from collections import OrderedDict
 
 # ──────────────────────────────  CONFIG  ─────────────────────────────────────
 READING_TIME    = 3
-FINAL_TIMER     = 12
+FINAL_TIMER     = 120
 PORT            = 5050
 CSV_FILE        = "jeopardy.csv"
 DEFAULT_VALUES  = [200, 400, 600, 800, 1000]
